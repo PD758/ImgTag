@@ -26,6 +26,9 @@ class Window(tk.Tk):
         self._image_cl:     None|ImageTk.PhotoImage|ImageTk.BitmapImage = None
         self._image_cl_id:  None|int = None
         
+        self.title("Image Tagger")
+        self.geometry("900x600")
+        
         self.init_widgets()
         self.render_widgets()
         self.register_hotkeys()
