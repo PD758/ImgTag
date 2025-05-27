@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import os, pathlib, typing
+import os, pathlib, typing, logging
 import tkinter as tk
 from tkinter import filedialog
 from PIL import ImageTk, Image
@@ -10,8 +10,11 @@ import csv
 
 import util
 
+logger = logging.getLogger(__name__)
+
 class Window(tk.Tk):
     def __init__(self):
+        logger.debug("Window.__init__")
         super().__init__()
         
         self.image_list:    list[str] = []
@@ -46,18 +49,20 @@ class Window(tk.Tk):
             writer.writerow(('tag_name',))
             writer.writerows(((t,) for t in tag_list))
     def load_file(self):
+        logger.debug("Window.load_file: asking filepicker")
         picked_dir = filedialog.askdirectory(mustexist=True)
         if picked_dir:
+            logger.debug("Window.load_file: picked %s", picked_dir)
             files = util.rec_listdir(picked_dir,
                             lambda path: util.check_ends(path, [".png", ".jpg", ".jpeg", ".bmp"], ignore_case=True))
             self.image_list = files
             self.image_iter = 0
             self.reload_image()
         else:
-            print("Pick canceled")
+            logger.debug("Window.load_file: canceled")
     def reload_image(self):
         if self.image_list:
-            print("reloading image", self.image_list[self.image_iter])
+            logger.debug("Window.reload_image: loading image %s", self.image_list[self.image_iter])
             self._raw_image = Image.open(self.image_list[self.image_iter])
             self.fileNameLabel.configure(text=self.image_list[self.image_iter])
             self.flush_image()
@@ -65,7 +70,7 @@ class Window(tk.Tk):
         self.flush_image(_recprotect=False)
     def flush_image(self, _recprotect = True):
         if self.image_list and self._raw_image is not None:
-            print("flushing image")
+            logger.debug("Window.flush_image: flushing canvas")
             cw = self.image.winfo_width()
             ch = self.image.winfo_height()
             if (cw < 10 or ch < 10) and _recprotect:
@@ -83,11 +88,13 @@ class Window(tk.Tk):
                 self.image.coords(self._image_cl_id, x_center, y_center)
     def handle_next(self, *a, **kw):
         if self.image_list:
+            logger.debug("Window.handle_next: switching to next image")
             self.image_iter += 1
             self.image_iter %= len(self.image_list)
             self.reload_image()
     def handle_previous(self, *a, **kw):
         if self.image_list:
+            logger.debug("Window.handle_previous: switching to previous image")
             self.image_iter -= 1
             self.image_iter %= len(self.image_list)
             self.reload_image()
@@ -98,6 +105,7 @@ class Window(tk.Tk):
             self.handle_next()
     def resizelast_detect_f(self, f_detect_i: int):
         if f_detect_i == self.resizelast_detect:
+            logger.debug("Window.resizelast_detect_f: detected window resize")
             self.flush_image()
             self.resizelast_detect = 0
     def handle_resize(self, event):
@@ -108,14 +116,17 @@ class Window(tk.Tk):
             self.resizelast_detect += 1
             self.after(50, self.resizelast_detect_f, self.resizelast_detect)
     def init_widgets(self):
+        logger.debug("Window.init_widgets")
         self.loadButton = tk.Button(self, text="Load from folder", command=self.load_file)
         self.image = tk.Canvas(self, width=100, height=100)
         self.fileNameLabel = tk.Label(self, text="")
     def render_widgets(self):
+        logger.debug("Window.render_widgets")
         self.loadButton.pack()
         self.image.pack(fill=tk.BOTH, expand=True)
         self.fileNameLabel.pack()
     def register_hotkeys(self):
+        logger.debug("Window.register_hotkeys")
         self.bind_all("<KeyPress>", self.keypress_callback)
         self.bind("<Key-Left>", self.handle_previous)
         self.bind("<Key-Right>", self.handle_next)

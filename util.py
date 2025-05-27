@@ -2,9 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import os, pathlib, typing
+import os, pathlib, typing, logging
+
+logger = logging.getLogger(__name__)
 
 def rec_listdir(path: str, filter_files: None|typing.Callable[[str], bool] = None) -> list[str]:
+    logger.debug(f"rec_listdir: browsing {path}")
     result = []
     for p in os.listdir(path):
         if os.path.isdir(os.path.join(path, p)):
