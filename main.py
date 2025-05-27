@@ -2,8 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+from window import Window
+
 def main():
-    print("Hello, World!")
+    w = Window()
+    w.mainloop()
 
 if __name__ == "__main__":
     main()
