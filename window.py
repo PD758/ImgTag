@@ -53,8 +53,14 @@ class Window(tk.Tk):
             writer.writerows(((t,) for t in tag_list))
     def load_file(self):
         logger.debug("Window.load_file: asking filepicker")
-        picked_dir = filedialog.askdirectory(mustexist=True)
-        if picked_dir:
+        picked_dir_raw = filedialog.askdirectory(mustexist=True)
+        if picked_dir_raw:
+            try:
+                picked_dir = str(pathlib.Path(picked_dir_raw).resolve())
+            except BaseException as e:
+                logger.error("Window.load_file: failed to resolve path %s: %s", picked_dir_raw, e)
+                messagebox.showerror("Error", "Failed to resolve path %s: %s" % (picked_dir_raw, e))
+                return
             logger.debug("Window.load_file: picked %s", picked_dir)
             files = util.rec_listdir(picked_dir,
                             lambda path: util.check_ends(path, [".png", ".jpg", ".jpeg", ".bmp"], ignore_case=True))
@@ -130,12 +136,22 @@ class Window(tk.Tk):
         logger.debug("Window.init_widgets")
         self.loadButton = tk.Button(self, text="Load from folder", command=self.load_file)
         self.image = tk.Canvas(self, width=100, height=100)
-        self.fileNameLabel = tk.Label(self, text="")
+        
+        self.dataGroup = tk.Frame(self)
+        self.fileNameLabel = tk.Label(self.dataGroup, text="", font=("Courier", 12, 'bold'))
     def render_widgets(self):
         logger.debug("Window.render_widgets")
-        self.loadButton.pack()
-        self.image.pack(fill=tk.BOTH, expand=True)
-        self.fileNameLabel.pack()
+        self.loadButton.grid(row=0, column=0, sticky="nsew")        
+        self.dataGroup.grid(row=0, column=1, sticky="nsew")
+        self.image.grid(row=1, column=0, columnspan=2, sticky="nsew")
+        
+        self.fileNameLabel.pack(anchor='w')
+
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=3)
+        
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=10)
     def register_hotkeys(self):
         logger.debug("Window.register_hotkeys")
         self.bind_all("<KeyPress>", self.keypress_callback)
