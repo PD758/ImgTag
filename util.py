@@ -8,7 +8,7 @@ def rec_listdir(path: str, filter_files: None|typing.Callable[[str], bool] = Non
     result = []
     for p in os.listdir(path):
         if os.path.isdir(os.path.join(path, p)):
-            result.extend(rec_listdir(os.path.join(path, p)))
+            result.extend(rec_listdir(os.path.join(path, p), filter_files=filter_files))
         elif (filter_files(os.path.join(path, p)) if filter_files is not None else True):
             result.append(os.path.join(path, p))
     return result
