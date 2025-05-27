@@ -12,6 +12,45 @@ import util
 
 logger = logging.getLogger(__name__)
 
+class GifImageTk:
+    def __init__(self, canvas, x, y, img: Image.Image, resize_thb: None|tuple[int, int] = None):
+        self.canvas = canvas
+        self.x = x
+        self.y = y
+
+        self.image = img
+        self.frames = []
+        self.current_frame = 0
+        self.stopped = False
+        self.captured_size = (0, 0)
+
+        try:
+            while True:
+                cp = self.image.copy()
+                if resize_thb is not None:
+                    cp.thumbnail(resize_thb, Image.Resampling.LANCZOS)
+                self.captured_size = cp.size
+                self.frames.append(ImageTk.PhotoImage(cp))
+                self.image.seek(len(self.frames))
+        except EOFError:
+            pass
+        
+        self.x -= self.captured_size[0] // 2
+        self.y -= self.captured_size[1] // 2
+
+        self.image_id = self.canvas.create_image(self.x, self.y, image=self.frames[0], anchor="nw")
+        self.animate()
+    def destroy(self):
+        self.stopped = True
+    def animate(self):
+        if self.frames and not self.stopped:
+            self.current_frame = (self.current_frame + 1) % len(self.frames)
+            self.canvas.itemconfig(self.image_id, image=self.frames[self.current_frame])
+            delay = int(self.image.info.get("duration", 100))
+            self.canvas.after(delay, self.animate)
+        elif self.stopped:
+            self.canvas.delete(self.image_id)
+
 class Window(tk.Tk):
     def __init__(self):
         logger.debug("Window.__init__")
@@ -23,7 +62,7 @@ class Window(tk.Tk):
         
         self._raw_image:    None|Image.Image = None
         self._image:        None|Image.Image = None
-        self._image_cl:     None|ImageTk.PhotoImage|ImageTk.BitmapImage = None
+        self._image_cl:     None|ImageTk.PhotoImage|ImageTk.BitmapImage|GifImageTk = None
         self._image_cl_id:  None|int = None
         
         self.title("Image Tagger")
@@ -63,7 +102,7 @@ class Window(tk.Tk):
                 return
             logger.debug("Window.load_file: picked %s", picked_dir)
             files = util.rec_listdir(picked_dir,
-                            lambda path: util.check_ends(path, [".png", ".jpg", ".jpeg", ".bmp"], ignore_case=True))
+                            lambda path: util.check_ends(path, [".png", ".jpg", ".jpeg", ".bmp", ".gif"], ignore_case=True))
             self.image_list = files
             self.image_iter = 0
             self.reload_image()
@@ -95,14 +134,23 @@ class Window(tk.Tk):
                 return
             self._image = self._raw_image.copy()
             self._image.thumbnail((cw, ch), Image.Resampling.LANCZOS)
-            self._image_cl = ImageTk.PhotoImage(self._image)
             x_center = cw / 2
             y_center = ch / 2
-            if self._image_cl_id is None:
-                self._image_cl_id = self.image.create_image(x_center, y_center, image=self._image_cl)
+            if isinstance(self._image_cl, GifImageTk):
+                self._image_cl.destroy()
+                self._image_cl = None
+            if self.image_list[self.image_iter].endswith(".gif"):
+                self._image_cl = GifImageTk(self.image, x_center, y_center, self._raw_image, (cw, ch))
             else:
-                self.image.itemconfig(self._image_cl_id, image=self._image_cl)
-                self.image.coords(self._image_cl_id, x_center, y_center)
+                if self.image_list[self.image_iter].endswith(".bmp"):
+                    self._image_cl = ImageTk.BitmapImage(self._image)
+                else:
+                    self._image_cl = ImageTk.PhotoImage(self._image)
+                if self._image_cl_id is None:
+                    self._image_cl_id = self.image.create_image(x_center, y_center, image=self._image_cl)
+                else:
+                    self.image.itemconfig(self._image_cl_id, image=self._image_cl)
+                    self.image.coords(self._image_cl_id, x_center, y_center)
     def handle_next(self, *a, **kw):
         if self.image_list:
             logger.debug("Window.handle_next: switching to next image")
