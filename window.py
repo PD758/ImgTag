@@ -14,7 +14,7 @@ class Window(tk.Tk):
     def __init__(self):
         super().__init__()
         
-        self.image_list:    list[pathlib.Path] = []
+        self.image_list:    list[str] = []
         self.image_iter:    int = 0
         self.window_size:   tuple[int, int] = (1, 1)
         
@@ -59,6 +59,7 @@ class Window(tk.Tk):
         if self.image_list:
             print("reloading image", self.image_list[self.image_iter])
             self._raw_image = Image.open(self.image_list[self.image_iter])
+            self.fileNameLabel.configure(text=self.image_list[self.image_iter])
             self.flush_image()
     def d_flush_image(self):
         self.flush_image(_recprotect=False)
@@ -100,16 +101,20 @@ class Window(tk.Tk):
             self.flush_image()
             self.resizelast_detect = 0
     def handle_resize(self, event):
-        if (event.width, event.height) != self.window_size:
-            self.window_size = (event.width, event.height)
+        ww = self.winfo_width()
+        wh = self.winfo_height()
+        if (ww, wh) != self.window_size:
+            self.window_size = (ww, wh)
             self.resizelast_detect += 1
             self.after(50, self.resizelast_detect_f, self.resizelast_detect)
     def init_widgets(self):
         self.loadButton = tk.Button(self, text="Load from folder", command=self.load_file)
         self.image = tk.Canvas(self, width=100, height=100)
+        self.fileNameLabel = tk.Label(self, text="")
     def render_widgets(self):
         self.loadButton.pack()
         self.image.pack(fill=tk.BOTH, expand=True)
+        self.fileNameLabel.pack()
     def register_hotkeys(self):
         self.bind_all("<KeyPress>", self.keypress_callback)
         self.bind("<Key-Left>", self.handle_previous)

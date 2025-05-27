@@ -4,7 +4,7 @@
 
 import os, pathlib, typing
 
-def rec_listdir(path: str, filter_files: None|typing.Callable[[str], bool] = None):
+def rec_listdir(path: str, filter_files: None|typing.Callable[[str], bool] = None) -> list[str]:
     result = []
     for p in os.listdir(path):
         if os.path.isdir(os.path.join(path, p)):
