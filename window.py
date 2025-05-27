@@ -4,7 +4,7 @@
 
 import os, pathlib, typing, logging
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from PIL import ImageTk, Image
 import csv
 
@@ -63,7 +63,15 @@ class Window(tk.Tk):
     def reload_image(self):
         if self.image_list:
             logger.debug("Window.reload_image: loading image %s", self.image_list[self.image_iter])
-            self._raw_image = Image.open(self.image_list[self.image_iter])
+            try:
+                self._raw_image = Image.open(self.image_list[self.image_iter])
+            except BaseException as e:
+                logger.error("Window.reload_image: failed to load image %s: %s", self.image_list[self.image_iter], e)
+                messagebox.showerror("Error", "Failed to load image %s: %s" % (self.image_list[self.image_iter], e))
+                self.image_list.pop(self.image_iter)
+                self.image_iter = 0
+                self.reload_image()
+                return
             self.fileNameLabel.configure(text=self.image_list[self.image_iter])
             self.flush_image()
     def d_flush_image(self):
