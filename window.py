@@ -142,10 +142,7 @@ class Window(tk.Tk):
             if self.image_list[self.image_iter].endswith(".gif"):
                 self._image_cl = GifImageTk(self.image, x_center, y_center, self._raw_image, (cw, ch))
             else:
-                if self.image_list[self.image_iter].endswith(".bmp"):
-                    self._image_cl = ImageTk.BitmapImage(self._image)
-                else:
-                    self._image_cl = ImageTk.PhotoImage(self._image)
+                self._image_cl = ImageTk.PhotoImage(self._image)
                 if self._image_cl_id is None:
                     self._image_cl_id = self.image.create_image(x_center, y_center, image=self._image_cl)
                 else:
