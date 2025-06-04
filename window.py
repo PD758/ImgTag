@@ -116,7 +116,7 @@ class Window(tk.Tk):
         if any(tag.startswith('score__') for tag in self.tag_list):
             self.tag_list = [tag for tag in self.tag_list if not tag.startswith('score__')]
         if self.tagType.get() == 'bool':
-            self.tag_list.append('score__T' if digit == 1 else 'score__F')
+            self.tag_list.append('score__1' if digit == 1 else 'score__0')
         else:
             self.tag_list.append('score__%d' % digit)
         self.save_tags(self.image_list[self.image_iter], self.tag_list)
