@@ -1,3 +1,4 @@
 pillow
 coloredlogs
 orjson
+send2trash

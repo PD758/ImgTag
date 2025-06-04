@@ -6,8 +6,12 @@ import os, pathlib, typing, logging
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import ImageTk, Image
-import csv
+import time
 import orjson
+from send2trash import send2trash
+
+
+from threading import Thread
 
 import string
 
@@ -24,33 +28,52 @@ class GifImageTk:
         self.image = img
         self.frames = []
         self.current_frame = 0
-        self.stopped = False
         self.captured_size = (0, 0)
+        self.resize_thb = resize_thb
 
-        try:
-            while True:
-                cp = self.image.copy()
-                if resize_thb is not None:
-                    cp.thumbnail(resize_thb, Image.Resampling.LANCZOS)
-                self.captured_size = cp.size
-                self.frames.append(ImageTk.PhotoImage(cp))
-                self.image.seek(len(self.frames))
-        except EOFError:
-            pass
+        for _ in range(3):
+            if not self.continue_load_frame():
+                break
+        else:
+            self.thr = Thread(target=self.continue_load, daemon=True)
+            self.thr.start()
+        
+        self.delay = int(self.image.info.get("duration", 100))
         
         self.x -= self.captured_size[0] // 2
         self.y -= self.captured_size[1] // 2
-
+    def start(self):
         self.image_id = self.canvas.create_image(self.x, self.y, image=self.frames[0], anchor="nw")
+        self.stopped = False
         self.animate()
+    def continue_load_frame(self) -> bool:
+        try:
+            cp = self.image.copy()
+            if self.resize_thb is not None:
+                cp.thumbnail(self.resize_thb, Image.Resampling.LANCZOS)
+            self.captured_size = cp.size
+            self.frames.append(ImageTk.PhotoImage(cp))
+            self.image.seek(len(self.frames))
+        except EOFError:
+            return False
+        except OSError:
+            return False
+        except AttributeError:
+            return False
+        except ValueError:
+            return False
+        else:
+            return True
+    def continue_load(self):
+        while self.continue_load_frame():
+            pass
     def destroy(self):
         self.stopped = True
     def animate(self):
         if self.frames and not self.stopped:
             self.current_frame = (self.current_frame + 1) % len(self.frames)
             self.canvas.itemconfig(self.image_id, image=self.frames[self.current_frame])
-            delay = int(self.image.info.get("duration", 100))
-            self.canvas.after(delay, self.animate)
+            self.canvas.after(self.delay, self.animate)
         elif self.stopped:
             self.canvas.delete(self.image_id)
 
@@ -77,26 +100,27 @@ class Window(tk.Tk):
         self.register_hotkeys()
         
         self.update_idletasks()
+        
+        self.after(50, self.wupdate)
     
         self.window_size: tuple[int, int] = (self.winfo_width(), self.winfo_height())
         
         self.resizelast_detect = 0
-        
     def load_tags(self, image_path: str) -> list[str]:
-        if os.path.exists('.'.join(image_path.split('.')[:-1]) + '.tags.json'):
-            with open('.'.join(image_path.split('.')[:-1]) + '.tags.json') as f:
+        if os.path.exists('.'.join(image_path.split('.')[:-1]) + '.json'):
+            with open('.'.join(image_path.split('.')[:-1]) + '.json') as f:
                 fc = orjson.loads(f.read())
                 return fc["tags"]
         else:
             return list()
     def save_tags(self, image_path: str, tag_list: typing.Iterable[str]):
-        if os.path.exists('.'.join(image_path.split('.')[:-1]) + '.tags.json'):
-            with open('.'.join(image_path.split('.')[:-1]) + '.tags.json') as f:
+        if os.path.exists('.'.join(image_path.split('.')[:-1]) + '.json'):
+            with open('.'.join(image_path.split('.')[:-1]) + '.json') as f:
                 fc = orjson.loads(f.read())
         else:
             fc = {}
         fc["tags"] = tag_list
-        with open('.'.join(image_path.split('.')[:-1]) + '.tags.json', 'w', newline='') as f:
+        with open('.'.join(image_path.split('.')[:-1]) + '.json', 'w', newline='') as f:
             f.write(orjson.dumps(fc).decode('utf-8'))
     def load_file(self):
         logger.debug("Window.load_file: asking filepicker")
@@ -120,10 +144,7 @@ class Window(tk.Tk):
         logger.debug("Window.handle_tag: %s", digit)
         if any(tag.startswith('score__') for tag in self.tag_list):
             self.tag_list = [tag for tag in self.tag_list if not tag.startswith('score__')]
-        if self.tagType.get() == 'bool':
-            self.tag_list.append('score__1' if digit == '1' else 'score__0')
-        else:
-            self.tag_list.append('score__%s' % ("10" if digit == '*' else digit))
+        self.tag_list.append('score__%s' % ("10" if digit == '*' else digit))
         self.save_tags(self.image_list[self.image_iter], self.tag_list)
         self.flush_tags()
     def reload_image(self):
@@ -150,7 +171,11 @@ class Window(tk.Tk):
             if (cw < 10 or ch < 10) and _recprotect:
                 self.after(10, self.flush_image, False)
                 return
-            self._image = self._raw_image.copy()
+            try:
+                self._image = self._raw_image.copy()
+            except OSError:
+                self.reload_image()
+                return
             self._image.thumbnail((cw, ch), Image.Resampling.LANCZOS)
             x_center = cw / 2
             y_center = ch / 2
@@ -158,7 +183,11 @@ class Window(tk.Tk):
                 self._image_cl.destroy()
                 self._image_cl = None
             if self.image_list[self.image_iter].endswith(".gif"):
+                if self._image_cl_id is not None:
+                    self.image.delete(self._image_cl_id)
+                    self._image_cl_id = None
                 self._image_cl = GifImageTk(self.image, x_center, y_center, self._raw_image, (cw, ch))
+                self._image_cl.start()
             else:
                 self._image_cl = ImageTk.PhotoImage(self._image)
                 if self._image_cl_id is None:
@@ -174,19 +203,34 @@ class Window(tk.Tk):
     def flush_tags(self):
         logger.debug("Window.flush_tags")
         tags_fs = ('"' + '", "'.join(self.tag_list) + '"') if self.tag_list else 'None'
+        CUT_LENGTH = 350
+        if len(tags_fs) > CUT_LENGTH: 
+            tags_fs = tags_fs[:CUT_LENGTH//2] + "<...>" + tags_fs[-CUT_LENGTH//2:]
         self.tagList.configure(text=f'Tags: {tags_fs}')
     def handle_next(self, *a, **kw):
-        if self.image_list:
-            logger.debug("Window.handle_next: switching to next image")
-            self.image_iter += 1
-            self.image_iter %= len(self.image_list)
-            self.reload_image()
+        try:
+            if self.image_list:
+                logger.debug("Window.handle_next: switching to next image")
+                self.image_iter += 1
+                self.image_iter %= len(self.image_list)
+                self.cached_prev = (self._raw_image, self._image_cl)
+                if isinstance(self._image_cl, GifImageTk):
+                    self._image_cl.destroy()
+                self.reload_image()
+        except:
+            pass
     def handle_previous(self, *a, **kw):
-        if self.image_list:
-            logger.debug("Window.handle_previous: switching to previous image")
-            self.image_iter -= 1
-            self.image_iter %= len(self.image_list)
-            self.reload_image()
+        try:
+            if self.image_list:
+                logger.debug("Window.handle_previous: switching to previous image")
+                self.image_iter -= 1
+                self.image_iter %= len(self.image_list)
+                self.cached_next = (self._raw_image, self._image_cl)
+                if isinstance(self._image_cl, GifImageTk):
+                    self._image_cl.destroy()
+                self.reload_image()
+        except:
+            pass
     def keypress_callback(self, event: tk.Event):
         if event.char == 'a':
             self.handle_previous()
@@ -197,15 +241,23 @@ class Window(tk.Tk):
     def resizelast_detect_f(self, f_detect_i: int):
         if f_detect_i == self.resizelast_detect:
             logger.debug("Window.resizelast_detect_f: detected window resize")
-            self.flush_image()
             self.resizelast_detect = 0
+            self.flush_image()
+            self.after(10, self.wupdate)
     def handle_resize(self, event):
         ww = self.winfo_width()
         wh = self.winfo_height()
         if (ww, wh) != self.window_size:
             self.window_size = (ww, wh)
             self.resizelast_detect += 1
-            self.after(50, self.resizelast_detect_f, self.resizelast_detect)
+            self.after(75, self.resizelast_detect_f, self.resizelast_detect)
+    def handle_delete(self, *args, **kwargs):
+        logger.debug("Window.handle_delete: deleting image %s", self.image_list[self.image_iter])
+        send2trash(self.image_list[self.image_iter])
+        if os.path.exists('.'.join(self.image_list[self.image_iter].split('.')[:-1])+'.json'):
+            send2trash('.'.join(self.image_list[self.image_iter].split('.')[:-1])+'.json')
+        self.image_list.pop(self.image_iter)
+        self.reload_image()
     def init_widgets(self):
         logger.debug("Window.init_widgets")
         self.loadButton = tk.Button(self, text="Load from folder", command=self.load_file)
@@ -214,12 +266,9 @@ class Window(tk.Tk):
         self.dataGroup = tk.Frame(self)
         self.fileNameLabel = tk.Label(self.dataGroup, text="", font=("Courier", 12, 'bold'))
         
-        self.tagType = tk.StringVar(self)
-        self.tagType.set("bool") 
-        self.tagTypeMenuLabel = tk.Label(self.dataGroup, text="Tag type:")
-        self.tagTypeMenu = tk.OptionMenu(self.dataGroup, self.tagType, "bool", "digit")
-        
         self.tagList = tk.Label(self.dataGroup, text="Tags: ", font=("Courier", 12, 'italic'))
+    def wupdate(self):
+        self.tagList.configure(wraplength=self.dataGroup.winfo_width())
     def render_widgets(self):
         logger.debug("Window.render_widgets")
         self.loadButton.grid(row=0, column=0, sticky="nsew")        
@@ -227,8 +276,6 @@ class Window(tk.Tk):
         self.image.grid(row=1, column=0, columnspan=2, sticky="nsew")
         
         self.fileNameLabel.pack(anchor='w')
-        self.tagTypeMenuLabel.pack(anchor='e')
-        self.tagTypeMenu.pack(anchor='e')
         
         self.tagList.pack(anchor='sw')
 
@@ -243,3 +290,4 @@ class Window(tk.Tk):
         self.bind("<Key-Left>", self.handle_previous)
         self.bind("<Key-Right>", self.handle_next)
         self.bind("<Configure>", self.handle_resize)
+        self.bind("<Delete>", self.handle_delete)
