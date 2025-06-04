@@ -8,6 +8,8 @@ from tkinter import filedialog, messagebox
 from PIL import ImageTk, Image
 import csv
 
+import string
+
 import util
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,7 @@ class Window(tk.Tk):
         self.image_list:    list[str] = []
         self.image_iter:    int = 0
         self.window_size:   tuple[int, int] = (1, 1)
+        self.tag_list:      list[str] = []
         
         self._raw_image:    None|Image.Image = None
         self._image:        None|Image.Image = None
@@ -78,13 +81,13 @@ class Window(tk.Tk):
         
         self.resizelast_detect = 0
         
-    def load_tags(self, image_path: str) -> tuple[str]:
+    def load_tags(self, image_path: str) -> list[str]:
         if os.path.exists('.'.join(image_path.split('.')[:-1]) + '.tags.csv'):
             with open('.'.join(image_path.split('.')[:-1]) + '.tags.csv') as f:
                 fc = csv.reader(f)
-                return list(zip(*(list(fc)[1:])))[0]
+                return list(list(zip(*(list(fc)[1:])))[0])
         else:
-            return tuple()
+            return list()
     def save_tags(self, image_path: str, tag_list: typing.Iterable[str]):
         with open('.'.join(image_path.split('.')[:-1]) + '.tags.csv', 'w', newline='') as f:
             writer = csv.writer(f)
@@ -108,6 +111,16 @@ class Window(tk.Tk):
             self.reload_image()
         else:
             logger.debug("Window.load_file: canceled")
+    def handle_tag(self, digit: int):
+        logger.debug("Window.handle_tag: %d", digit)
+        if any(tag.startswith('score__') for tag in self.tag_list):
+            self.tag_list = [tag for tag in self.tag_list if not tag.startswith('score__')]
+        if self.tagType.get() == 'bool':
+            self.tag_list.append('score__T' if digit == 1 else 'score__F')
+        else:
+            self.tag_list.append('score__%d' % digit)
+        self.save_tags(self.image_list[self.image_iter], self.tag_list)
+        self.flush_tags()
     def reload_image(self):
         if self.image_list:
             logger.debug("Window.reload_image: loading image %s", self.image_list[self.image_iter])
@@ -121,16 +134,16 @@ class Window(tk.Tk):
                 self.reload_image()
                 return
             self.fileNameLabel.configure(text=self.image_list[self.image_iter])
+            self.reload_tags()
             self.flush_image()
-    def d_flush_image(self):
-        self.flush_image(_recprotect=False)
     def flush_image(self, _recprotect = True):
         if self.image_list and self._raw_image is not None:
             logger.debug("Window.flush_image: flushing canvas")
+            self.flush_tags()
             cw = self.image.winfo_width()
             ch = self.image.winfo_height()
             if (cw < 10 or ch < 10) and _recprotect:
-                self.after(10, self.d_flush_image)
+                self.after(10, self.flush_image, False)
                 return
             self._image = self._raw_image.copy()
             self._image.thumbnail((cw, ch), Image.Resampling.LANCZOS)
@@ -148,6 +161,15 @@ class Window(tk.Tk):
                 else:
                     self.image.itemconfig(self._image_cl_id, image=self._image_cl)
                     self.image.coords(self._image_cl_id, x_center, y_center)
+    def reload_tags(self):
+        if self.image_list:
+            logger.debug("Window.reload_tags: reloading tags for image %s", self.image_list[self.image_iter])
+            self.tag_list = self.load_tags(self.image_list[self.image_iter])
+            self.flush_tags()
+    def flush_tags(self):
+        logger.debug("Window.flush_tags")
+        tags_fs = ('"' + '", "'.join(self.tag_list) + '"') if self.tag_list else 'None'
+        self.tagList.configure(text=f'Tags: {tags_fs}')
     def handle_next(self, *a, **kw):
         if self.image_list:
             logger.debug("Window.handle_next: switching to next image")
@@ -165,6 +187,8 @@ class Window(tk.Tk):
             self.handle_previous()
         elif event.char == 'd':
             self.handle_next()
+        elif event.char and event.char in string.digits:
+            self.handle_tag(int(event.char))
     def resizelast_detect_f(self, f_detect_i: int):
         if f_detect_i == self.resizelast_detect:
             logger.debug("Window.resizelast_detect_f: detected window resize")
@@ -184,6 +208,13 @@ class Window(tk.Tk):
         
         self.dataGroup = tk.Frame(self)
         self.fileNameLabel = tk.Label(self.dataGroup, text="", font=("Courier", 12, 'bold'))
+        
+        self.tagType = tk.StringVar(self)
+        self.tagType.set("bool") 
+        self.tagTypeMenuLabel = tk.Label(self.dataGroup, text="Tag type:")
+        self.tagTypeMenu = tk.OptionMenu(self.dataGroup, self.tagType, "bool", "digit")
+        
+        self.tagList = tk.Label(self.dataGroup, text="Tags: ", font=("Courier", 12, 'italic'))
     def render_widgets(self):
         logger.debug("Window.render_widgets")
         self.loadButton.grid(row=0, column=0, sticky="nsew")        
@@ -191,6 +222,10 @@ class Window(tk.Tk):
         self.image.grid(row=1, column=0, columnspan=2, sticky="nsew")
         
         self.fileNameLabel.pack(anchor='w')
+        self.tagTypeMenuLabel.pack(anchor='e')
+        self.tagTypeMenu.pack(anchor='e')
+        
+        self.tagList.pack(anchor='sw')
 
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=3)
