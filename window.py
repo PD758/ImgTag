@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import ImageTk, Image
 import csv
+import orjson
 
 import string
 
@@ -82,17 +83,21 @@ class Window(tk.Tk):
         self.resizelast_detect = 0
         
     def load_tags(self, image_path: str) -> list[str]:
-        if os.path.exists('.'.join(image_path.split('.')[:-1]) + '.tags.csv'):
-            with open('.'.join(image_path.split('.')[:-1]) + '.tags.csv') as f:
-                fc = csv.reader(f)
-                return list(list(zip(*(list(fc)[1:])))[0])
+        if os.path.exists('.'.join(image_path.split('.')[:-1]) + '.tags.json'):
+            with open('.'.join(image_path.split('.')[:-1]) + '.tags.json') as f:
+                fc = orjson.loads(f.read())
+                return fc["tags"]
         else:
             return list()
     def save_tags(self, image_path: str, tag_list: typing.Iterable[str]):
-        with open('.'.join(image_path.split('.')[:-1]) + '.tags.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(('tag_name',))
-            writer.writerows(((t,) for t in tag_list))
+        if os.path.exists('.'.join(image_path.split('.')[:-1]) + '.tags.json'):
+            with open('.'.join(image_path.split('.')[:-1]) + '.tags.json') as f:
+                fc = orjson.loads(f.read())
+        else:
+            fc = {}
+        fc["tags"] = tag_list
+        with open('.'.join(image_path.split('.')[:-1]) + '.tags.json', 'w', newline='') as f:
+            f.write(orjson.dumps(fc).decode('utf-8'))
     def load_file(self):
         logger.debug("Window.load_file: asking filepicker")
         picked_dir_raw = filedialog.askdirectory(mustexist=True)
@@ -111,14 +116,14 @@ class Window(tk.Tk):
             self.reload_image()
         else:
             logger.debug("Window.load_file: canceled")
-    def handle_tag(self, digit: int):
-        logger.debug("Window.handle_tag: %d", digit)
+    def handle_tag(self, digit):
+        logger.debug("Window.handle_tag: %s", digit)
         if any(tag.startswith('score__') for tag in self.tag_list):
             self.tag_list = [tag for tag in self.tag_list if not tag.startswith('score__')]
         if self.tagType.get() == 'bool':
-            self.tag_list.append('score__1' if digit == 1 else 'score__0')
+            self.tag_list.append('score__1' if digit == '1' else 'score__0')
         else:
-            self.tag_list.append('score__%d' % digit)
+            self.tag_list.append('score__%s' % ("10" if digit == '*' else digit))
         self.save_tags(self.image_list[self.image_iter], self.tag_list)
         self.flush_tags()
     def reload_image(self):
@@ -187,8 +192,8 @@ class Window(tk.Tk):
             self.handle_previous()
         elif event.char == 'd':
             self.handle_next()
-        elif event.char and event.char in string.digits:
-            self.handle_tag(int(event.char))
+        elif event.char and (event.char in string.digits or event.char == '*'):
+            self.handle_tag(event.char)
     def resizelast_detect_f(self, f_detect_i: int):
         if f_detect_i == self.resizelast_detect:
             logger.debug("Window.resizelast_detect_f: detected window resize")
