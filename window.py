@@ -159,7 +159,8 @@ class Window(tk.Tk):
                 self.image_iter = 0
                 self.reload_image()
                 return
-            self.fileNameLabel.configure(text=self.image_list[self.image_iter])
+            pc = self.image_iter / len(self.image_list) * 100
+            self.fileNameLabel.configure(text=f"{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
             self.reload_tags()
             self.flush_image()
     def flush_image(self, _recprotect = True):
@@ -203,7 +204,7 @@ class Window(tk.Tk):
     def flush_tags(self):
         logger.debug("Window.flush_tags")
         tags_fs = ('"' + '", "'.join(self.tag_list) + '"') if self.tag_list else 'None'
-        CUT_LENGTH = 350
+        CUT_LENGTH = 360
         if len(tags_fs) > CUT_LENGTH: 
             tags_fs = tags_fs[:CUT_LENGTH//2] + "<...>" + tags_fs[-CUT_LENGTH//2:]
         self.tagList.configure(text=f'Tags: {tags_fs}')
