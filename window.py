@@ -18,6 +18,16 @@ import util
 
 logger = logging.getLogger(__name__)
 
+try:
+    import vlc
+    import platform
+    VLC_SUPPORT = True
+except ImportError:
+    if typing.TYPE_CHECKING:
+        raise
+    VLC_SUPPORT = False
+    messagebox.showwarning("VLC Missing", "python-vlc library not found. Video playback will be disabled.")
+
 class GifImageTk:
     def __init__(self, canvas, x, y, img: Image.Image, resize_thb: None|tuple[int, int] = None):
         self.canvas = canvas
@@ -112,6 +122,8 @@ class GifImageTk:
             self.image_id = None
 
 class Window(tk.Tk):
+    VIDEO_EXTENSIONS = [".mp4", ".avi", ".mov", ".mkv"]
+    
     def __init__(self):
         logger.debug("Window.__init__")
         super().__init__()
@@ -125,6 +137,17 @@ class Window(tk.Tk):
         self._image:        None|Image.Image = None
         self._image_cl:     None|ImageTk.PhotoImage|ImageTk.BitmapImage|GifImageTk = None
         self._image_cl_id:  None|int = None
+   
+        if VLC_SUPPORT:
+            try:
+                self.vlc_instance: vlc.Instance = vlc.Instance("--no-xlib" if platform.system() == 'Linux' else "") # type: ignore
+                self.vlc_player: vlc.MediaPlayer = self.vlc_instance.media_player_new()
+                self.playing_video: bool = False
+                self.volume: int = 50
+            except BaseException as e:
+                logger.error("Window.__init__: Failed to initialize VLC: %s", e)
+                messagebox.showerror("VLC Initialization Error", f"Could not initialize VLC player. Video playback will be affected.\nError: {e}")
+                globals()["VLC_SUPPORT"] = False
         
         self.title("Image Tagger")
         self.geometry("900x600")
@@ -179,7 +202,8 @@ class Window(tk.Tk):
                 return
             logger.debug("Window.load_file: picked %s", picked_dir)
             files = util.rec_listdir(picked_dir,
-                            lambda path: util.check_ends(path, [".png", ".jpg", ".jpeg", ".bmp", ".gif"], ignore_case=True))
+                            lambda path: util.check_ends(path, [".png", ".jpg", ".jpeg", ".bmp", ".gif"]
+                                                         + (self.VIDEO_EXTENSIONS if VLC_SUPPORT else []), ignore_case=True))
             if not files:
                 messagebox.showinfo("No files found", "No supported images found in selected directory")
             self.image_list = files
@@ -197,22 +221,69 @@ class Window(tk.Tk):
     def reload_image(self):
         if not self.image_list:
             return
-        
         logger.debug("Window.reload_image: loading image %s", self.image_list[self.image_iter])
+        
+        self._clean_mediasource()
         try:
-            self._raw_image = Image.open(self.image_list[self.image_iter])
+            assert os.path.exists(self.image_list[self.image_iter]), f"Media {self.image_list[self.image_iter]} does not exist"
         except BaseException as e:
-            logger.error("Window.reload_image: failed to load image %s: %s", self.image_list[self.image_iter], e)
-            messagebox.showerror("Error", "Failed to load image %s: %s" % (self.image_list[self.image_iter], e))
+            logger.error("Window.reload_image: failed to load media %s: %s", self.image_list[self.image_iter], e)
+            messagebox.showerror("Error", "Failed to load media %s: %s" % (self.image_list[self.image_iter], e))
             self.image_list.pop(self.image_iter)
             self.image_iter = 0
             self.reload_image()
             return
         pc = (self.image_iter+1) / len(self.image_list) * 100
-        self.fileNameLabel.configure(text=f"{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
         self.reload_tags()
-        self.flush_image()
+        if VLC_SUPPORT and os.path.splitext(self.image_list[self.image_iter])[1].lower() in self.VIDEO_EXTENSIONS:
+            logger.debug("Window.reload_image: loading video %s", self.image_list[self.image_iter])
+            try:
+                media: vlc.Media = self.vlc_instance.media_new(self.image_list[self.image_iter])
+                if not media:
+                    raise RuntimeError("Failed to load video %s" % self.image_list[self.image_iter])
+                media.add_option('input-repeat=65535')
+                self.vlc_player.set_media(media)
+                media.release()
+                self.image.update_idletasks()
+                win_id = self.image.winfo_id()
+                if platform.system() in ["Windows", "Darwin"]:
+                    self.vlc_player.set_hwnd(win_id)
+                else:
+                    self.vlc_player.set_xwindow(win_id)
+                self.playing_video = True
+                self.vlc_player.audio_set_volume(self.volume)
+                if self.vlc_player.play() == -1:
+                    raise RuntimeError(f"Failed to play video {self.image_list[self.image_iter]}")
+                self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
+            except BaseException as e:
+                logger.error("Window.reload_image: failed to load video %s: %s", self.image_list[self.image_iter], e)
+                messagebox.showerror("Error", f"Failed to load video {self.image_list[self.image_iter]}: {e}")
+                self.image_list.pop(self.image_iter)
+                self.image_iter = 0
+                self.reload_image()
+                return
+        else:
+            try:
+                self._raw_image = Image.open(self.image_list[self.image_iter])
+            except BaseException as e:
+                logger.error("Window.reload_image: failed to load image %s: %s", self.image_list[self.image_iter], e)
+                messagebox.showerror("Error", "Failed to load image %s: %s" % (self.image_list[self.image_iter], e))
+                self.image_list.pop(self.image_iter)
+                self.image_iter = 0
+                self.reload_image()
+                return
+            self.playing_video = False
+            self.fileNameLabel.configure(text=f"{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
+            self.flush_image()
     def flush_image(self, _recprotect = True):
+        
+        if VLC_SUPPORT and self.playing_video:
+            if hasattr(self, '_image_cl_id') and self._image_cl_id is not None:
+                try: self.image.delete(self._image_cl_id)
+                except tk.TclError: pass
+                self._image_cl_id = None
+            return
+        
         if self.image_list and self._raw_image is not None:
             logger.debug("Window.flush_image: flushing canvas")
             cw = self.image.winfo_width()
@@ -283,14 +354,15 @@ class Window(tk.Tk):
         if f_detect_i == self.resizelast_detect:
             logger.debug("Window.resizelast_detect_f: detected window resize")
             self.resizelast_detect = 0
-            self.flush_image()
+            if VLC_SUPPORT and not self.playing_video:
+                self.flush_image()
     def handle_resize(self, event):
         ww = self.winfo_width()
         wh = self.winfo_height()
         if (ww, wh) != self.window_size:
             self.window_size = (ww, wh)
             self.resizelast_detect += 1
-            self.after(75, self.resizelast_detect_f, self.resizelast_detect)
+            self.after(125, self.resizelast_detect_f, self.resizelast_detect)
     def handle_delete(self, *args, **kwargs):
         if not self.image_list:
             messagebox.showinfo("Delete", "No image to delete.")
@@ -304,6 +376,7 @@ class Window(tk.Tk):
             if os.path.exists('.'.join(self.image_list[self.image_iter].split('.')[:-1])+'.json'):
                 send2trash('.'.join(self.image_list[self.image_iter].split('.')[:-1])+'.json')
             self.image_list.pop(self.image_iter)
+            self.image_iter %= len(self.image_list)
             self.reload_image()
         except BaseException as e:
             logger.error("Window.handle_delete: %s", e)
@@ -342,12 +415,59 @@ class Window(tk.Tk):
         self.bind_all("<KeyPress>", self.keypress_callback, add='+')
         self.bind("<Key-Left>", self.handle_previous)
         self.bind("<Key-Right>", self.handle_next)
+        self.bind("<Key-Down>", self.volume_down)
+        self.bind("<Key-Up>", self.volume_up)
         self.bind("<Configure>", self.handle_resize)
         self.bind("<Configure>", self.update_taglist_wraplength)
         self.bind("<Delete>", self.handle_delete)
         self.bind("<Escape>", lambda e: self.on_close())
     def on_close(self):
+        logger.debug("Window.on_close")
+        
+        self._clean_mediasource()
+        
+        if VLC_SUPPORT:
+            if self.vlc_player:
+                self.vlc_player.release()
+                del self.vlc_player
+            if self.vlc_instance:
+                self.vlc_instance.release()
+                del self.vlc_instance
+        
         for after_id in self.tk.eval('after info').split():
             self.after_cancel(after_id)
         #self.destroy()
         exit(0)
+    def _clean_mediasource(self):
+        if VLC_SUPPORT:
+            if self.playing_video:
+                self.playing_video = False
+                self.vlc_player.stop()
+        if isinstance(self._image_cl, GifImageTk):
+            self._image_cl.destroy()
+        self._image_cl = None
+        if self._image_cl_id is not None:
+            if hasattr(self, 'image') and self.image.winfo_exists():
+                try:
+                    self.image.delete(self._image_cl_id)
+                except tk.TclError:
+                    pass
+            self._image_cl_id = None
+        self._raw_image = None
+        self._image = None
+    def volume_down(self, *args, **kwargs):
+        if VLC_SUPPORT and self.playing_video:
+            logger.debug("Window.volume_down")
+            self.volume = max(0, self.volume - 5)
+            self.vlc_player.audio_set_volume(self.volume)
+            logger.debug("Window.volume_down: set to %s", self.volume)
+            pc = (self.image_iter+1) / len(self.image_list) * 100
+            self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
+    def volume_up(self, *args, **kwargs):
+        if VLC_SUPPORT and self.playing_video:
+            logger.debug("Window.volume_up")
+            self.volume = min(100, self.volume + 5)
+            self.vlc_player.audio_set_volume(self.volume)
+            logger.debug("Window.volume_up: set to %s", self.volume)
+            pc = (self.image_iter+1) / len(self.image_list) * 100
+            self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
