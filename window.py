@@ -241,6 +241,10 @@ class Window(tk.Tk):
                 media: vlc.Media = self.vlc_instance.media_new(self.image_list[self.image_iter])
                 if not media:
                     raise RuntimeError("Failed to load video %s" % self.image_list[self.image_iter])
+                
+                media.parse()
+                length = media.get_duration()
+                
                 media.add_option('input-repeat=65535')
                 self.vlc_player.set_media(media)
                 media.release()
@@ -254,7 +258,16 @@ class Window(tk.Tk):
                 self.vlc_player.audio_set_volume(self.volume)
                 if self.vlc_player.play() == -1:
                     raise RuntimeError(f"Failed to play video {self.image_list[self.image_iter]}")
-                self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
+                mins_f = (length / 1000) // 60
+                if mins_f > 0:
+                    timespf = f"{int(mins_f):02d}:{int((length / 1000)%60):02d}"
+                else:
+                    timespf = f"{(length/1000):.1f} sec."
+                
+                self.curr_timespf = timespf
+                
+                self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter] +
+                                             f"\t{timespf}")
             except BaseException as e:
                 logger.error("Window.reload_image: failed to load video %s: %s", self.image_list[self.image_iter], e)
                 messagebox.showerror("Error", f"Failed to load video {self.image_list[self.image_iter]}: {e}")
@@ -353,6 +366,8 @@ class Window(tk.Tk):
             self.handle_seek()
         elif event.char == 'j':
             self.jump_10()
+        elif event.char == 'h':
+            self.back_10()
         elif event.char == ' ':
             self.handle_pause()
         elif event.char and (event.char in string.digits or event.char == '*'):
@@ -469,7 +484,7 @@ class Window(tk.Tk):
             self.vlc_player.audio_set_volume(self.volume)
             logger.debug("Window.volume_down: set to %s", self.volume)
             pc = (self.image_iter+1) / len(self.image_list) * 100
-            self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
+            self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter] + f"\t{self.curr_timespf}")
     def volume_up(self, *args, **kwargs):
         if VLC_SUPPORT and self.playing_video:
             logger.debug("Window.volume_up")
@@ -477,7 +492,7 @@ class Window(tk.Tk):
             self.vlc_player.audio_set_volume(self.volume)
             logger.debug("Window.volume_up: set to %s", self.volume)
             pc = (self.image_iter+1) / len(self.image_list) * 100
-            self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
+            self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter] + f"\t{self.curr_timespf}")
     def handle_seek(self):
         """search for first media without score"""
         if not self.image_list:
@@ -500,6 +515,13 @@ class Window(tk.Tk):
                 if self.vlc_player.get_length() - curr > 10*1000:
                     logger.debug("Window.jump_10: set time to %s", curr + 10 * 1000)
                     self.vlc_player.set_time(curr + 10 * 1000)
+    def back_10(self):
+        if VLC_SUPPORT:
+            if self.playing_video:
+                curr = self.vlc_player.get_time()
+                nw = max(0, curr - 10*1000)
+                logger.debug("Window.back_10: set time to %s", nw)
+                self.vlc_player.set_time(nw)
     def handle_pause(self):
         if VLC_SUPPORT:
             if self.playing_video:
