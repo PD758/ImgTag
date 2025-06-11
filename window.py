@@ -351,6 +351,10 @@ class Window(tk.Tk):
             self.handle_next()
         elif event.char == 'f':
             self.handle_seek()
+        elif event.char == 'j':
+            self.jump_10()
+        elif event.char == ' ':
+            self.handle_pause()
         elif event.char and (event.char in string.digits or event.char == '*'):
             self.handle_tag(event.char)
     def resizelast_detect_f(self, f_detect_i: int):
@@ -487,3 +491,20 @@ class Window(tk.Tk):
         self.image_iter %= len(self.image_list)
         self.reload_tags()
         self.reload_image()
+    def jump_10(self):
+        """forward 10 seconds"""
+        if VLC_SUPPORT:
+            if self.playing_video:
+                logger.debug("Window.jump_10")
+                curr = self.vlc_player.get_time()
+                if self.vlc_player.get_length() - curr > 10*1000:
+                    logger.debug("Window.jump_10: set time to %s", curr + 10 * 1000)
+                    self.vlc_player.set_time(curr + 10 * 1000)
+    def handle_pause(self):
+        if VLC_SUPPORT:
+            if self.playing_video:
+                if self.vlc_player.is_playing():
+                    self.vlc_player.pause()
+                else:
+                    self.vlc_player.play()
+            
