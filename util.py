@@ -9,11 +9,11 @@ logger = logging.getLogger(__name__)
 def rec_listdir(path: str, filter_files: None|typing.Callable[[str], bool] = None) -> list[str]:
     logger.debug(f"rec_listdir: browsing {path}")
     result = []
-    for p in os.listdir(path):
-        if os.path.isdir(os.path.join(path, p)):
-            result.extend(rec_listdir(os.path.join(path, p), filter_files=filter_files))
-        elif (filter_files(os.path.join(path, p)) if filter_files is not None else True):
-            result.append(os.path.join(path, p))
+    for root, _, files in os.walk(path):
+        for filename in files:
+            full_path = os.path.join(root, filename)
+            if filter_files is None or filter_files(full_path):
+                result.append(full_path)
     return result
 
 def check_ends(str, ends: typing.Iterable[str], ignore_case: bool = False):
