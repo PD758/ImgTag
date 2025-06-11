@@ -316,13 +316,14 @@ class Window(tk.Tk):
                 logger.error("Window.flush_image: error during image processing/display for %s: %s", self.image_list[self.image_iter], e, exc_info=True)
                 messagebox.showerror("Image display error", f"Could not display image: {self.image_list[self.image_iter]}\n{e}")
                 self.after(10, self.reload_image)
-    def reload_tags(self):
+    def reload_tags(self, flush: bool = True):
         if self.image_list:
             logger.debug("Window.reload_tags: reloading tags for image %s", self.image_list[self.image_iter])
             self.tag_list = self.load_tags(self.image_list[self.image_iter])
         else:
             self.tag_list = []
-        self.flush_tags()
+        if flush:
+            self.flush_tags()
     def flush_tags(self):
         logger.debug("Window.flush_tags")
         tags_fs = ('"' + '", "'.join(self.tag_list) + '"') if self.tag_list else 'None'
@@ -348,6 +349,8 @@ class Window(tk.Tk):
             self.handle_previous()
         elif event.char == 'd':
             self.handle_next()
+        elif event.char == 'f':
+            self.handle_seek()
         elif event.char and (event.char in string.digits or event.char == '*'):
             self.handle_tag(event.char)
     def resizelast_detect_f(self, f_detect_i: int):
@@ -471,3 +474,16 @@ class Window(tk.Tk):
             logger.debug("Window.volume_up: set to %s", self.volume)
             pc = (self.image_iter+1) / len(self.image_list) * 100
             self.fileNameLabel.configure(text=f"V={self.volume}%\t{pc:.2f}% {self.image_iter+1}/{len(self.image_list)}\t" + self.image_list[self.image_iter])
+    def handle_seek(self):
+        """search for first media without score"""
+        if not self.image_list:
+            return
+        if not any(tag.startswith("score__") for tag in self.tag_list):
+            return
+        self.image_iter = 0
+        while self.image_iter < len(self.image_list) and any(tag.startswith("score__") for tag in self.tag_list):
+            self.image_iter += 1
+            self.reload_tags(flush=False)
+        self.image_iter %= len(self.image_list)
+        self.reload_tags()
+        self.reload_image()
