@@ -394,6 +394,7 @@ class Window(tk.Tk):
             return
         logger.debug("Window.handle_delete: deleting image %s", self.image_list[self.image_iter])
         try:
+            self._clean_mediasource()
             send2trash(self.image_list[self.image_iter])
             if os.path.exists('.'.join(self.image_list[self.image_iter].split('.')[:-1])+'.json'):
                 send2trash('.'.join(self.image_list[self.image_iter].split('.')[:-1])+'.json')
