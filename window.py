@@ -224,11 +224,10 @@ class Window(tk.Tk):
         logger.debug("Window.reload_image: loading image %s", self.image_list[self.image_iter])
         
         self._clean_mediasource()
-        try:
-            assert os.path.exists(self.image_list[self.image_iter]), f"Media {self.image_list[self.image_iter]} does not exist"
-        except BaseException as e:
-            logger.error("Window.reload_image: failed to load media %s: %s", self.image_list[self.image_iter], e)
-            messagebox.showerror("Error", "Failed to load media %s: %s" % (self.image_list[self.image_iter], e))
+        
+        if not os.path.exists(self.image_list[self.image_iter]):
+            logger.error("Window.reload_image: failed to load media %s: %s", self.image_list[self.image_iter], f"Media {self.image_list[self.image_iter]} does not exist")
+            messagebox.showerror("Error", "Failed to load media %s: %s" % (self.image_list[self.image_iter], f"Media {self.image_list[self.image_iter]} does not exist"))
             self.image_list.pop(self.image_iter)
             self.image_iter = 0
             self.reload_image()
@@ -462,10 +461,13 @@ class Window(tk.Tk):
         #self.destroy()
         exit(0)
     def _clean_mediasource(self):
+        logger.debug("Window._clean_mediasource")
         if VLC_SUPPORT:
             if self.playing_video:
                 self.playing_video = False
+                logger.debug("Window._clean_mediasource: stopping player")
                 self.vlc_player.stop()
+                logger.debug("Window._clean_mediasource: player stopped")
         if isinstance(self._image_cl, GifImageTk):
             self._image_cl.destroy()
         self._image_cl = None
@@ -478,6 +480,7 @@ class Window(tk.Tk):
             self._image_cl_id = None
         self._raw_image = None
         self._image = None
+        logger.debug("Window._clean_mediasource: done")
     def volume_down(self, *args, **kwargs):
         if VLC_SUPPORT and self.playing_video:
             logger.debug("Window.volume_down")
@@ -501,7 +504,7 @@ class Window(tk.Tk):
         if not any(tag.startswith("score__") for tag in self.tag_list):
             return
         self.image_iter = 0
-        while self.image_iter < len(self.image_list) and any(tag.startswith("score__") for tag in self.tag_list):
+        while self.image_iter < len(self.image_list)-1 and any(tag.startswith("score__") for tag in self.tag_list):
             self.image_iter += 1
             self.reload_tags(flush=False)
         self.image_iter %= len(self.image_list)
