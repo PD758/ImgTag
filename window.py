@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox
 from PIL import ImageTk, Image
 from threading import Thread
 from send2trash import send2trash
+import time
 
 import util
 
@@ -140,7 +141,12 @@ class Window(tk.Tk):
    
         if VLC_SUPPORT:
             try:
-                self.vlc_instance: vlc.Instance = vlc.Instance("--no-xlib" if platform.system() == 'Linux' else "") # type: ignore
+                args = [
+                    "--quiet",
+                    "--no-snapshot-preview",
+                    "--no-video-title-show"
+                ] + (["--no-xlib"]if platform.system() == 'Linux' else [])
+                self.vlc_instance: vlc.Instance = vlc.Instance(args) # type: ignore
                 self.vlc_player: vlc.MediaPlayer = self.vlc_instance.media_player_new()
                 self.playing_video: bool = False
                 self.volume: int = 50
@@ -245,6 +251,7 @@ class Window(tk.Tk):
                 length = media.get_duration()
                 
                 media.add_option('input-repeat=65535')
+                media.add_option(':no-video-title-show')
                 self.vlc_player.set_media(media)
                 media.release()
                 self.image.update_idletasks()
@@ -466,7 +473,18 @@ class Window(tk.Tk):
             if self.playing_video:
                 self.playing_video = False
                 logger.debug("Window._clean_mediasource: stopping player")
-                self.vlc_player.stop()
+                if self.vlc_player.is_playing():
+                    self.vlc_player.stop()
+                    timeout = 0
+                    while self.vlc_player.get_state() != vlc.State.Stopped:
+                        time.sleep(0.01)
+                        timeout += 1
+                        if timeout > 150:
+                            logger.error("Window._clean_mediasource: could not stop player: timeout")
+                            break
+                old_media = self.vlc_player.get_media()
+                if old_media:
+                    old_media.release()
                 logger.debug("Window._clean_mediasource: player stopped")
         if isinstance(self._image_cl, GifImageTk):
             self._image_cl.destroy()

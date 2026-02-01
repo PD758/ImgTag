@@ -16,5 +16,5 @@ def main():
     logger.info("exiting")
 
 if __name__ == "__main__":
-    install(level=logging.DEBUG)
+    install(level=logging.INFO)
     main()
